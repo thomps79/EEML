@@ -23,24 +23,7 @@ import torch.nn.functional as F
 import torch
 from PIL import Image
 
-png_dir = "C:\\Users\\awt24\\Desktop\\files\\"
-
-def parseFile(file):
-    world = np.zeros((200,200,3))
-    with open(file, 'rb') as f:
-        
-        # Read the binary data into a buffer
-        buffer = f.read()
-        i = 0
-        for x in range(200):
-            for y in range(200):
-                world[x][y][2] = buffer[i]
-                world[x][y][1] = buffer[i+1]
-                world[x][y][0] = buffer[i+2]
-                i += 3
-			
-    return world
-
+png_dir = "C:\\Users\\awt24\\Downloads\\ArchivEE_1.0.0\\output\\"
 
 """
 print("loading worlds")
@@ -65,7 +48,7 @@ class PNGDataset(Dataset):
     def __init__(self, root_dir, transform=None):
         self.root_dir = root_dir
         self.transform = transform
-        self.image_files = [f for f in os.listdir(root_dir) if f.endswith('.png')]
+        self.image_files = [Image.open(os.path.join(self.root_dir, f)).convert('RGB') for f in os.listdir(root_dir) if f.endswith('.png')]
 
     def __len__(self):
         return len(self.image_files)
@@ -74,8 +57,7 @@ class PNGDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        img_path = os.path.join(self.root_dir, self.image_files[idx])
-        image = Image.open(img_path).convert('RGB')
+        image = self.image_files[idx]
 
         if self.transform:
             image = self.transform(image)
@@ -131,7 +113,7 @@ class Discriminator(nn.Module):
 def main():
     # Define any desired transformations
     transformations = transforms.Compose([
-        transforms.Resize((THE_SIZE, THE_SIZE)), # Should already be 25x25
+        transforms.RandomCrop((THE_SIZE, THE_SIZE)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
