@@ -8,20 +8,17 @@ from matplotlib import pyplot as plt
 import argparse
 import os
 import numpy as np
-import math
-import cv2
-
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
-
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from torch.autograd import Variable
-
-import torch.nn as nn
 import torch.nn.functional as F
-import torch
 from PIL import Image
+import os
+from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms as transforms
+
 
 png_dir = "C:\\Users\\awt24\\Downloads\\ArchivEE_1.0.0\\output\\"
 
@@ -34,15 +31,36 @@ for file in files:
 os.exit()
 """
 
-THE_SIZE = 50
+THE_SIZE = 64
 
 # Data Loader
 
-import os
-from PIL import Image
-import torch
-from torch.utils.data import Dataset, DataLoader
-import torchvision.transforms as transforms
+
+
+# Number of workers for dataloader
+workers = 2
+
+# Batch size during training
+batch_size = 128
+
+# Spatial size of training images. All images will be resized to this
+#   size using a transformer.
+image_size = 64
+
+# Number of channels in the training images. For color images this is 3
+nc = 3
+
+# Size of z latent vector (i.e. size of generator input)
+nz = 100
+
+# Size of feature maps in generator
+ngf = 64
+
+# Size of feature maps in discriminator
+ndf = 64
+
+# Number of GPUs available. Use 0 for CPU mode.
+ngpu = 1
 
 class PNGDataset(Dataset):
     def __init__(self, root_dir, transform=None):
@@ -70,20 +88,28 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
         self.img_shape = img_shape
 
-        def block(in_feat, out_feat, normalize=True):
-            layers = [nn.Linear(in_feat, out_feat)]
-            if normalize:
-                layers.append(nn.BatchNorm1d(out_feat, 0.8))
-            layers.append(nn.LeakyReLU(0.2, inplace=True))
-            return layers
 
         self.model = nn.Sequential(
-            *block(opt.latent_dim, 128, normalize=False),
-            *block(128, 256),
-            *block(256, 512),
-            *block(512, 1024),
-            nn.Linear(1024, int(np.prod(img_shape))),
+            # input is Z, going into a convolution
+            nn.ConvTranspose2d( nz, ngf * 8, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(ngf * 8),
+            nn.ReLU(True),
+            # state size. (ngf*8) x 4 x 4
+            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 4),
+            nn.ReLU(True),
+            # state size. (ngf*4) x 8 x 8
+            nn.ConvTranspose2d( ngf * 4, ngf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 2),
+            nn.ReLU(True),
+            # state size. (ngf*2) x 16 x 16
+            nn.ConvTranspose2d( ngf * 2, ngf, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf),
+            nn.ReLU(True),
+            # state size. (ngf) x 32 x 32
+            nn.ConvTranspose2d( ngf, nc, 4, 2, 1, bias=False),
             nn.Tanh()
+            # state size. (nc) x 64 x 64
         )
 
     def forward(self, z):
@@ -97,12 +123,24 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
 
         self.model = nn.Sequential(
-            nn.Linear(int(np.prod(img_shape)), 512),
+            # input is (nc) x 64 x 64
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(512, 256),
+            # state size. (ndf) x 32 x 32
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(256, 1),
-            nn.Sigmoid(),
+            # state size. (ndf*2) x 16 x 16
+            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*4) x 8 x 8
+            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*8) x 4 x 4
+            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
+            nn.Sigmoid()
         )
 
     def forward(self, img):
@@ -117,6 +155,8 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
+    
+    device = torch.device("cuda:0" if (torch.cuda.is_available() and ngpu > 0) else "cpu")
 
     batch_size = 64
     num_workers = 4
@@ -186,7 +226,7 @@ def main():
             optimizer_G.zero_grad()
 
             # Sample noise as generator input
-            z = Variable(Tensor(np.random.normal(0, 1, (imgs.shape[0], opt.latent_dim))))
+            z = torch.randn(imgs[0].to(device).size(0), nz, 1, 1, device=device)
 
             # Generate a batch of images
             gen_imgs = generator(z)
