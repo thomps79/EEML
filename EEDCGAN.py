@@ -1,12 +1,9 @@
 from __future__ import print_function
 #%matplotlib inline
-import argparse
-import os
 import random
 import torch
 import torch.nn as nn
 import torch.nn.parallel
-import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data
 import torchvision.datasets as dset
@@ -14,15 +11,14 @@ import torchvision.transforms as transforms
 import torchvision.utils as vutils
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from IPython.display import HTML
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset, DataLoader
-from PIL import Image
-import torchvision.transforms.functional as F
 import torchvision.utils
 
 def main():
+	print(torch.cuda.is_available())
+	gen_file = ""
+	opt_gen_file = ""
+	disc_file = ""
+	opt_disc_file = ""
 
 	# Set random seed for reproducibility
 	manualSeed = 1000
@@ -35,7 +31,7 @@ def main():
 	dataroot = "data/celeba"
 
 	# Number of workers for dataloader
-	workers = 2
+	workers = 1
 
 	# Batch size during training
 	batch_size = 128
@@ -68,7 +64,7 @@ def main():
 	# Number of GPUs available. Use 0 for CPU mode.
 	ngpu = 1
 
-	png_dir = "C:\\Users\\awt24\\Downloads\\ArchivEE_1.0.0\\abc\\"
+	png_dir = "C:\\Users\\awt24\\Downloads\\ArchivEE_1.0.0\\3channel\\"
 
 	# Define any desired transformations
 	transformations = transforms.Compose([
@@ -78,8 +74,6 @@ def main():
 	])
 
 	batch_size = 64
-	num_workers = 4
-	shuffle = True
 
 	# We can use an image folder dataset the way we have it setup.
 	# Create the dataset
@@ -149,20 +143,7 @@ def main():
 
 		def forward(self, input):
 			return self.main(input)
-		
-	# Create the generator
-	netG = Generator(ngpu).to(device)
-
-	# Handle multi-gpu if desired
-	if (device.type == 'cuda') and (ngpu > 1):
-		netG = nn.DataParallel(netG, list(range(ngpu)))
-
-	# Apply the weights_init function to randomly initialize all weights
-	#  to mean=0, stdev=0.02.
-	netG.apply(weights_init)
-
-	# Print the model
-	print(netG)
+	
 
 	class Discriminator(nn.Module):
 		def __init__(self, ngpu):
@@ -191,7 +172,21 @@ def main():
 
 		def forward(self, input):
 			return self.main(input)
-		
+ 	
+	# Create the generator
+	netG = Generator(ngpu).to(device)
+
+	# Handle multi-gpu if desired
+	if (device.type == 'cuda') and (ngpu > 1):
+		netG = nn.DataParallel(netG, list(range(ngpu)))
+
+	# Apply the weights_init function to randomly initialize all weights
+	#  to mean=0, stdev=0.02.
+	netG.apply(weights_init)
+
+	# Print the model
+	print(netG)
+
 	# Create the Discriminator
 	netD = Discriminator(ngpu).to(device)
 
@@ -205,6 +200,17 @@ def main():
 
 	# Print the model
 	print(netD)
+ 
+	# Setup Adam optimizers for both G and D
+	optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
+	optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
+ 
+	if gen_file != "":
+		optimizerD.load_state_dict(torch.load(opt_disc_file))
+		optimizerG.load_state_dict(torch.load(opt_gen_file))
+		netG.load_state_dict(torch.load(gen_file))
+		netD.load_state_dict(torch.load(disc_file))
+		
 
 	# Initialize BCELoss function
 	criterion = nn.BCELoss()
@@ -216,10 +222,6 @@ def main():
 	# Establish convention for real and fake labels during training
 	real_label = 1.
 	fake_label = 0.
-
-	# Setup Adam optimizers for both G and D
-	optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
-	optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
 
 	# Training Loop
 
@@ -296,17 +298,17 @@ def main():
 			D_losses.append(errD.item())
 
 			# Check how the generator is doing by saving G's output on fixed_noise
-			if (iters % 100 == 0) or ((epoch == num_epochs-1) and (i == len(dataloader)-1)):
+			if (iters % 500 == 0) or ((epoch == num_epochs-1) and (i == len(dataloader)-1)):
 				with torch.no_grad():
 					fake = netG(fixed_noise).detach().cpu()
 				torchvision.utils.save_image(vutils.make_grid(fake, padding=2, normalize=True), f"{iters}.png")
 				img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
-				torch.save(netG.state_dict(), f"model{iters}.pt")
-				torch.save(netD.state_dict(), f"model{iters}.pt")
-				torch.save(optimizerG.state_dict(), f"optim{iters}.pt")
-				torch.save(optimizerD.state_dict(), f"optim{iters}.pt")
+    
+			if (iters % 1000 == 0) or ((epoch == num_epochs-1) and (i == len(dataloader)-1)):
+				torch.save(netG.state_dict(), f"netG{iters}.pt")
+				torch.save(netD.state_dict(), f"netD{iters}.pt")
+				torch.save(optimizerD.state_dict(), f"optimD{iters}.pt")
 				torch.save(optimizerG.state_dict(), f"optimG{iters}.pt")
-				torch.save(netG.state_dict(), f"modelG{iters}.pt")
 
 			iters += 1
         
